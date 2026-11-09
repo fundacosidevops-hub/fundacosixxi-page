@@ -42,7 +42,7 @@ function svc_classes(string $c): array {
     <title>Unidad de Atención Primaria Fundacosi XXI | Villa Mella, Santo Domingo Norte</title>
     <meta name="description" content="<?= e($site['description']) ?>">
     <link rel="canonical" href="<?= e($site['url']) ?>/">
-    <meta name="theme-color" content="#0f172a">
+    <meta name="theme-color" content="#315e6c">
 
     <!-- Open Graph / redes sociales -->
     <meta property="og:type" content="website">
@@ -54,7 +54,10 @@ function svc_classes(string $c): array {
     <meta property="og:image" content="<?= e($site['url']) ?>/Imagenes/frente.webp">
     <meta name="twitter:card" content="summary_large_image">
 
-    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="favicon.ico" sizes="48x48">
+    <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="manifest" href="site.webmanifest">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -70,6 +73,7 @@ function svc_classes(string $c): array {
         'name' => $site['name'],
         'url' => $site['url'],
         'image' => $site['url'] . '/Imagenes/frente.webp',
+        'logo' => $site['url'] . '/Imagenes/logo/logo.png',
         'telephone' => $site['phone_e164'],
         'email' => $site['email'],
         'address' => [
@@ -95,9 +99,7 @@ function svc_classes(string $c): array {
 <header class="glass-header fixed inset-x-0 top-0 z-50">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 md:py-4 flex justify-between items-center gap-4">
         <a href="#inicio" class="flex items-center gap-3 min-w-0" aria-label="Ir al inicio">
-            <span class="w-10 h-10 bg-slate-900 flex items-center justify-center rounded-xl flex-shrink-0">
-                <span class="text-white font-bold text-xl font-serif">F</span>
-            </span>
+            <img src="Imagenes/logo/logo-mark.webp" alt="Logo Fundacosi XXI" width="311" height="298" class="h-10 sm:h-11 w-auto flex-shrink-0">
             <span class="min-w-0">
                 <span class="block text-[15px] sm:text-lg font-bold leading-tight tracking-tight font-serif">Unidad de Atención Primaria</span>
                 <span class="block text-[11px] uppercase tracking-[0.2em] text-teal-700 font-semibold">Fundacosi XXI</span>
@@ -473,7 +475,10 @@ function svc_classes(string $c): array {
 <footer class="bg-slate-950 text-slate-400 pt-14 pb-24 md:pb-10 px-4 sm:px-6 border-t border-white/5 text-sm">
     <div class="max-w-7xl mx-auto grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
         <div class="lg:col-span-2">
-            <p class="text-white font-bold text-lg font-serif"><?= e($site['name']) ?></p>
+            <div class="flex items-center gap-4">
+                <img src="Imagenes/logo/logo-256.webp" alt="Logo Unidad de Atención Primaria Fundacosi XXI" width="256" height="256" loading="lazy" class="w-20 h-20 rounded-full bg-white flex-shrink-0">
+                <p class="text-white font-bold text-lg font-serif"><?= e($site['name']) ?></p>
+            </div>
             <p class="mt-3 max-w-md leading-relaxed">Servicios de salud accesibles, humanos y de calidad para la comunidad de Villa Mella y Santo Domingo Norte.</p>
             <?php $socials = array_filter($site['social']); if ($socials): ?>
             <div class="flex gap-4 text-lg mt-5">
@@ -515,7 +520,7 @@ function svc_classes(string $c): array {
 <section id="chat-panel" role="dialog" aria-modal="false" aria-labelledby="chat-title" hidden
          class="chat-panel fixed z-[80] inset-0 sm:inset-auto sm:bottom-24 sm:right-5 sm:w-[390px] sm:h-[620px] sm:max-h-[calc(100vh-8rem)] bg-white sm:rounded-3xl shadow-2xl flex-col overflow-hidden border border-slate-200">
     <header class="bg-slate-900 text-white px-4 py-3 flex items-center gap-3 flex-shrink-0">
-        <span class="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-user-nurse" aria-hidden="true"></i></span>
+        <span class="w-10 h-10 rounded-full bg-white flex items-center justify-center flex-shrink-0 p-1"><img src="Imagenes/logo/logo-mark.webp" alt="" width="311" height="298" class="w-full h-auto"></span>
         <div class="min-w-0 flex-1">
             <h2 id="chat-title" class="font-semibold text-sm leading-tight truncate"><?= e($chatbot['name']) ?></h2>
             <p class="text-xs text-teal-300 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> En línea · responde al instante</p>

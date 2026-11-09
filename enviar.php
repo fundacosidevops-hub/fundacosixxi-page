@@ -20,7 +20,7 @@ function respond(bool $ok, string $msg, int $code = 200) {
         // Sin JavaScript: página simple de respuesta
         header('Content-Type: text/html; charset=utf-8');
         echo '<!DOCTYPE html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-           . '<title>Formulario</title><body style="font-family:sans-serif;max-width:560px;margin:15vh auto;padding:0 20px;text-align:center">'
+           . '<title>Formulario</title><link rel="icon" href="favicon.ico"><body style="font-family:sans-serif;max-width:560px;margin:15vh auto;padding:0 20px;text-align:center"><img src="Imagenes/logo/logo-256.webp" alt="Fundacosi XXI" width="120" height="120">'
            . '<p style="font-size:18px">' . e($msg) . '</p><p><a href="index.php#contacto">Volver al sitio</a></p></body></html>';
     }
     exit;
