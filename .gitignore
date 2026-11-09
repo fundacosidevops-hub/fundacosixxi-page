@@ -1,0 +1,5 @@
+.ftpquota
+node_modules/
+includes/secrets.php
+data/*
+!data/.htaccess
