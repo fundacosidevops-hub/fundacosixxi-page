@@ -1,5 +1,12 @@
 .ftpquota
 node_modules/
+
+# Claves y datos privados: NUNCA se suben a GitHub
 includes/secrets.php
+includes/secrets.example.php
+.env
+*.env
+
+# Datos que genera el sitio (mensajes, citas de respaldo, caché, límites)
 data/*
 !data/.htaccess
