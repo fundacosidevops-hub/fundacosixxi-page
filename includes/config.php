@@ -41,11 +41,32 @@ $site = [
 $chatbot = [
     'enabled'      => true,
     'name'         => 'Asistente virtual Fundacosi',
-    'api_base'     => 'https://api.openai.com/v1',
-    // Modelo de OpenAI. Uno pequeño y económico es suficiente; revisa los modelos
-    // disponibles en https://platform.openai.com/docs/models y cámbialo aquí si hace falta.
-    'model'        => 'gpt-4.1-mini',
+
+    // ===== PROVEEDOR DE IA: cambia esta línea para elegir =====
+    //   'openai'    → ChatGPT (OpenAI)      clave: 'openai_api_key' en secrets.php
+    //   'anthropic' → Claude (Anthropic)    clave: 'anthropic_api_key' en secrets.php
+    'provider'     => 'openai',
+
+    'providers' => [
+        'openai' => [
+            'api_base' => 'https://api.openai.com/v1',
+            'model'    => 'gpt-6-luna',      // modelos: https://developers.openai.com/api/docs/models
+            'reasoning_effort' => 'none',    // necesario para usar herramientas en Chat Completions
+            'max_tokens' => 600,
+        ],
+        'anthropic' => [
+            'api_base' => 'https://api.anthropic.com/v1',
+            'model'    => 'claude-haiku-5-5', // modelos: https://platform.claude.com/docs/en/about-claude/models/overview
+            'version'  => '2026-10-21',       // cabecera anthropic-version
+            'effort'   => 'low',              // low = más rápido y económico
+            'max_tokens' => 1024,
+        ],
+    ],
+
     'timezone'     => 'America/Santo_Domingo',
+    // Turnos: los médicos que empiezan antes de esta hora son del turno de la MAÑANA;
+    // desde esta hora, del turno de la TARDE. Desde esta hora, hoy solo se mencionan los de la tarde.
+    'corte_tarde'  => '11:00',
     'max_history'  => 16,   // mensajes recordados por conversación
     'max_input'    => 600,  // caracteres por mensaje del paciente
     'limit_session_hour' => 40,  // mensajes por visitante por hora

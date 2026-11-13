@@ -4,7 +4,7 @@
  * POST JSON: { action: "message" | "history" | "reset", message?: string, csrf: string }
  * Responde JSON: { ok: bool, reply?: string, messages?: [...], cita?: {...} }
  *
- * - IA: OpenAI (clave en includes/secrets.php → 'openai_api_key' o variable OPENAI_API_KEY).
+ * - IA: OpenAI o Claude, según $chatbot['provider'] en config.php (ver includes/llm.php).
  * - Datos de la unidad: webapi.fundacosixxi.com (servicios, médicos, horario del día,
  *   seguros y solicitudes de cita). Si la API no responde, usa config.php y
  *   conocimiento.php, y guarda las citas en data/citas.csv.
@@ -13,6 +13,7 @@ session_start();
 require __DIR__ . '/includes/config.php';
 require __DIR__ . '/includes/conocimiento.php';
 require __DIR__ . '/includes/webapi.php';
+require __DIR__ . '/includes/llm.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -59,11 +60,9 @@ if (!ip_allowed($_SERVER['REMOTE_ADDR'] ?? '0', $chatbot['limit_ip_hour'])) {
 }
 $_SESSION['chat_times'][] = $now;
 
-/* ---------- Clave de OpenAI ---------- */
-$secrets = is_file(__DIR__ . '/includes/secrets.php') ? (include __DIR__ . '/includes/secrets.php') : [];
-$apiKey = getenv('OPENAI_API_KEY') ?: ($secrets['openai_api_key'] ?? '');
-if (!$apiKey || strpos($apiKey, 'pega-tu-clave') !== false) {
-    error_log('[chatbot] Falta la clave de OpenAI (includes/secrets.php)');
+/* ---------- Clave del proveedor de IA ---------- */
+if (llm_api_key() === '') {
+    error_log('[chatbot] Falta la clave de ' . llm_provider() . ' en includes/secrets.php');
     out(['ok' => false, 'reply' => $fallback], 503);
 }
 
@@ -76,76 +75,56 @@ $serviceNames = $apiInfo
 /* ---------- Conversación ---------- */
 $_SESSION['chat'][] = ['role' => 'user', 'content' => $msg];
 $history = array_slice($_SESSION['chat'], -$chatbot['max_history']);
-$messages = array_merge([['role' => 'system', 'content' => build_system_prompt($apiInfo)]], $history);
-
 $tools = [[
-    'type' => 'function',
-    'function' => [
-        'name' => 'registrar_solicitud_cita',
-        'description' => 'Registra una solicitud de cita para que el personal llame al paciente a confirmarla. Úsala SOLO después de tener todos los datos obligatorios y de que el paciente confirme el resumen.',
-        'parameters' => [
-            'type' => 'object',
-            'properties' => [
-                'nombre'            => ['type' => 'string', 'description' => 'Nombre y apellido del paciente'],
-                'telefono'          => ['type' => 'string', 'description' => 'Teléfono de contacto'],
-                'especialidad'      => ['type' => 'string', 'enum' => $serviceNames],
-                'doctor'            => ['type' => 'string', 'description' => 'Nombre del médico preferido, si el paciente indicó uno de la lista'],
-                'fecha_preferida'   => ['type' => 'string', 'description' => 'Fecha o días preferidos, tal como los dijo el paciente'],
-                'horario_preferido' => ['type' => 'string', 'description' => 'Mañana, tarde u hora aproximada, si la dio'],
-                'motivo'            => ['type' => 'string', 'description' => 'Motivo breve de la consulta, si el paciente quiso darlo'],
-            ],
-            'required' => ['nombre', 'telefono', 'especialidad', 'fecha_preferida'],
+    'name' => 'registrar_solicitud_cita',
+    'description' => 'Registra una solicitud de cita para que el personal llame al paciente a confirmarla. Úsala SOLO después de tener todos los datos obligatorios y de que el paciente confirme el resumen.',
+    'parameters' => [
+        'type' => 'object',
+        'properties' => [
+            'nombre'            => ['type' => 'string', 'description' => 'Nombre y apellido del paciente'],
+            'telefono'          => ['type' => 'string', 'description' => 'Teléfono de contacto'],
+            'especialidad'      => ['type' => 'string', 'enum' => $serviceNames],
+            'doctor'            => ['type' => 'string', 'description' => 'Nombre del médico preferido, si el paciente indicó uno de la lista'],
+            'fecha_preferida'   => ['type' => 'string', 'description' => 'Fecha o días preferidos, tal como los dijo el paciente'],
+            'horario_preferido' => ['type' => 'string', 'description' => 'Mañana, tarde u hora aproximada, si la dio'],
+            'motivo'            => ['type' => 'string', 'description' => 'Motivo breve de la consulta, si el paciente quiso darlo'],
         ],
+        'required' => ['nombre', 'telefono', 'especialidad', 'fecha_preferida'],
     ],
 ]];
 if ($apiInfo) {
     $tools[] = [
-        'type' => 'function',
-        'function' => [
-            'name' => 'consultar_medicos_del_dia',
-            'description' => 'Consulta en el sistema de la unidad qué médicos atienden hoy o mañana, a qué hora empiezan y cuántos cupos quedan. Úsala cuando pregunten quién atiende hoy/mañana, si hay un doctor disponible o a qué hora llega.',
-            'parameters' => [
-                'type' => 'object',
-                'properties' => [
-                    'dia'          => ['type' => 'string', 'enum' => ['hoy', 'manana']],
-                    'especialidad' => ['type' => 'string', 'enum' => $serviceNames, 'description' => 'Opcional: filtrar por especialidad'],
-                ],
-                'required' => ['dia'],
+        'name' => 'consultar_medicos_del_dia',
+        'description' => 'Consulta en el sistema de la unidad qué médicos atienden hoy o mañana, a qué hora empiezan y cuántos cupos quedan. Úsala cuando pregunten quién atiende hoy/mañana, si hay un doctor disponible o a qué hora llega.',
+        'parameters' => [
+            'type' => 'object',
+            'properties' => [
+                'dia'          => ['type' => 'string', 'enum' => ['hoy', 'manana']],
+                'especialidad' => ['type' => 'string', 'enum' => $serviceNames, 'description' => 'Opcional: filtrar por especialidad'],
             ],
+            'required' => ['dia'],
         ],
     ];
 }
 
 $citaRegistrada = null;
-$reply = '';
-for ($i = 0; $i < 4; $i++) {
-    $res = openai_chat($apiKey, $messages, $tools);
-    if (!$res) {
-        array_pop($_SESSION['chat']);
-        out(['ok' => false, 'reply' => $fallback], 502);
+$exec = function (string $name, array $args) use (&$citaRegistrada, $apiInfo): array {
+    switch ($name) {
+        case 'registrar_solicitud_cita':
+            $r = registrar_cita($args, $apiInfo);
+            if (!empty($r['ok'])) $citaRegistrada = $r;
+            return $r;
+        case 'consultar_medicos_del_dia':
+            return consultar_medicos($args, $apiInfo);
+        default:
+            return ['ok' => false, 'error' => 'Función desconocida'];
     }
-    $choice = $res['choices'][0]['message'] ?? [];
-    if (!empty($choice['tool_calls'])) {
-        $messages[] = $choice;
-        foreach ($choice['tool_calls'] as $call) {
-            $args = json_decode($call['function']['arguments'] ?? '{}', true) ?: [];
-            switch ($call['function']['name'] ?? '') {
-                case 'registrar_solicitud_cita':
-                    $result = registrar_cita($args, $apiInfo);
-                    if (!empty($result['ok'])) $citaRegistrada = $result;
-                    break;
-                case 'consultar_medicos_del_dia':
-                    $result = consultar_medicos($args, $apiInfo);
-                    break;
-                default:
-                    $result = ['ok' => false, 'error' => 'Función desconocida'];
-            }
-            $messages[] = ['role' => 'tool', 'tool_call_id' => $call['id'], 'content' => json_encode($result, JSON_UNESCAPED_UNICODE)];
-        }
-        continue;
-    }
-    $reply = trim((string)($choice['content'] ?? ''));
-    break;
+};
+
+$reply = llm_run(build_system_prompt($apiInfo), $history, $tools, $exec);
+if ($reply === null) {
+    array_pop($_SESSION['chat']); // no guardar el mensaje sin respuesta
+    out(['ok' => false, 'reply' => $fallback], 502);
 }
 if ($reply === '') $reply = 'Disculpa, no pude procesar tu mensaje. ¿Puedes repetirlo de otra forma?';
 
@@ -182,7 +161,8 @@ function build_system_prompt(?array $apiInfo): string {
         $seguros = $apiInfo['insurances']
             ? implode(', ', array_map(fn($i) => $i['name'], $apiInfo['insurances']))
             : '(no hay seguros cargados en el sistema)';
-        $diaInfo = "Para saber quién atiende HOY o MAÑANA, a qué hora y si quedan cupos, usa SIEMPRE la función consultar_medicos_del_dia. No supongas disponibilidad. Para otros días no hay agenda en el sistema: ofrece tomar una solicitud de cita o llamar.";
+        $corte = date('g:i a', strtotime($chatbot['corte_tarde'] ?? '11:00'));
+        $diaInfo = "MÉDICOS: cada vez que alguien pregunte por médicos o doctores (quién atiende, qué doctor hay, si hay disponible, a qué hora), llama PRIMERO a consultar_medicos_del_dia (dia = hoy, salvo que pregunte por mañana) y responde solo con lo que devuelva, agrupado en «Turno de la mañana» (empiezan antes de las $corte) y «Turno de la tarde» (empiezan desde las $corte). Desde las $corte de hoy, menciona solo los médicos de la tarde con cupos. Sigue la «instruccion» que devuelva la función. La lista general de médicos por especialidad de abajo NO indica quién atiende hoy: úsala solo para saber qué médicos trabajan en la unidad. Para días distintos de hoy y mañana no hay agenda: ofrece tomar una solicitud de cita o llamar.";
     } else {
         $fuente = "El sistema interno no está disponible ahora; usa solo la lista de abajo.";
         $esp = '';
@@ -243,7 +223,7 @@ Horario de atención de la unidad:
 Servicios principales (descripción):
 {$svcWeb}
 {$fuente}
-Especialidades y médicos:
+Especialidades y médicos registrados (NO indica quién atiende hoy):
 {$esp}
 Seguros médicos (ARS) aceptados: {$seguros}
 
@@ -259,54 +239,59 @@ function consultar_medicos(array $a, ?array $apiInfo): array {
     $svc = !empty($a['especialidad']) ? webapi_find_service($apiInfo, $a['especialidad']) : null;
     $data = webapi_schedule($day, $svc['id'] ?? null);
     if (!$data) return ['ok' => false, 'error' => 'El sistema no respondió. Sugiere llamar para confirmar.'];
-    $docs = array_map(fn($d) => [
-        'medico' => $d['name'], 'especialidad' => $d['service'], 'hora_inicio' => $d['start_time'],
-        'cupos_disponibles' => $d['available'],
-    ], $data['doctors'] ?? []);
-    return [
-        'ok' => true,
-        'fecha' => $data['date'],
-        'medicos' => $docs,
-        'nota' => $docs ? 'Los cupos se asignan por orden de llegada en la unidad.' : 'No hay médicos registrados para ese día (o aún no se ha cargado la asistencia).',
-    ];
+    return clasificar_por_turno($data, $day === 'today', date('H:i'));
 }
 
-function openai_chat(string $key, array $messages, array $tools): ?array {
+/**
+ * Regla de turnos de la unidad:
+ *  - Médico que empieza ANTES de la hora de corte (11:00 a. m.)  → turno de la MAÑANA.
+ *  - Médico que empieza DESDE la hora de corte en adelante        → turno de la TARDE.
+ *  - Para HOY: solo se muestran médicos con cupos, y desde la hora de corte
+ *    ya no se mencionan los de la mañana (su turno terminó).
+ *  - Para MAÑANA (día siguiente): se muestran ambos turnos.
+ */
+function clasificar_por_turno(array $data, bool $isToday, string $now): array {
     global $chatbot;
-    $payload = json_encode([
-        'model' => $chatbot['model'],
-        'messages' => $messages,
-        'tools' => $tools,
-        'temperature' => 0.3,
-        'max_tokens' => 500,
-    ], JSON_UNESCAPED_UNICODE);
-    $url = rtrim($chatbot['api_base'], '/') . '/chat/completions';
-    $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $key];
+    $cut = $chatbot['corte_tarde'] ?? '11:00';
+    $cutTxt = date('g:i a', strtotime($cut));
+    $afterCut = $isToday && $now >= $cut;
 
-    if (function_exists('curl_init')) {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true, CURLOPT_POSTFIELDS => $payload, CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_CONNECTTIMEOUT => 10,
-        ]);
-        $body = curl_exec($ch);
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $err = curl_error($ch);
-        curl_close($ch);
-    } else {
-        $ctx = stream_context_create(['http' => [
-            'method' => 'POST', 'header' => implode("\r\n", $headers), 'content' => $payload,
-            'timeout' => 30, 'ignore_errors' => true,
-        ]]);
-        $body = @file_get_contents($url, false, $ctx);
-        $code = isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m) ? (int)$m[1] : 0;
-        $err = $body === false ? 'sin respuesta' : '';
+    $manana = $tarde = [];
+    $sinCupos = $mananaTerminada = 0;
+    foreach ($data['doctors'] ?? [] as $d) {
+        if ($isToday && (int)($d['available'] ?? 0) <= 0) { $sinCupos++; continue; }
+        $start = (string)($d['start_time'] ?? '');
+        $esTarde = $start !== '' && $start >= $cut;
+        if ($afterCut && !$esTarde) { $mananaTerminada++; continue; }
+        $row = ['medico' => $d['name'], 'especialidad' => $d['service'], 'hora_inicio' => $start ?: 'no indicada'];
+        if ($isToday) $row['cupos_disponibles'] = (int)$d['available'];
+        if ($esTarde) $tarde[] = $row; else $manana[] = $row;
     }
-    if ($body === false || $code < 200 || $code >= 300) {
-        error_log("[chatbot] Error OpenAI HTTP $code $err " . substr((string)$body, 0, 300));
-        return null;
+
+    $instr = "Al responder, agrupa SIEMPRE a los médicos por turno con estos títulos: "
+           . "«Turno de la mañana (antes de las $cutTxt)» y «Turno de la tarde (desde las $cutTxt)». "
+           . "Indica la hora de inicio de cada médico. No menciones médicos que no estén en estas listas.";
+    if ($afterCut) {
+        $instr .= " Ya son más de las $cutTxt: menciona SOLO los médicos del turno de la tarde. "
+                . "Si preguntan por un médico de la mañana, explica que el turno de la mañana ya terminó por hoy.";
     }
-    return json_decode($body, true);
+    if (!$manana && !$tarde) {
+        $instr = $afterCut
+            ? "No quedan médicos disponibles en el turno de la tarde de hoy. Ofrece tomar una solicitud de cita para otro día o llamar."
+            : "No hay médicos disponibles para ese día en el sistema (o aún no se ha cargado la asistencia). Ofrece tomar una solicitud de cita o llamar.";
+    }
+
+    return [
+        'ok' => true,
+        'fecha' => $data['date'] ?? null,
+        'hora_actual' => $isToday ? $now : null,
+        'turno_manana' => $afterCut ? [] : $manana,
+        'turno_tarde' => $tarde,
+        'turno_manana_terminado' => $afterCut,
+        'medicos_sin_cupos_omitidos' => $sinCupos,
+        'instruccion' => $instr,
+        'nota' => 'Los cupos se asignan por orden de llegada en la unidad.',
+    ];
 }
 
 function registrar_cita(array $a, ?array $apiInfo): array {
